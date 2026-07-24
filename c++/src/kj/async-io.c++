@@ -53,7 +53,7 @@
 namespace kj {
 
 Promise<size_t> AsyncInputStream::read(ArrayPtr<byte> buffer, size_t minBytes) {
-  return tryRead(buffer.begin(), minBytes, buffer.size()).then([=](size_t result) mutable {
+  auto handleShortRead = [=](size_t result) mutable {
     if (result >= minBytes) {
       return result;
     } else {
@@ -62,7 +62,20 @@ Promise<size_t> AsyncInputStream::read(ArrayPtr<byte> buffer, size_t minBytes) {
       buffer.first(minBytes).slice(result).fill(0);
       return minBytes;
     }
-  });
+  };
+
+  // Fast path: complete the read synchronously if the data is already available, avoiding
+  // promise overhead.
+  KJ_IF_SOME(result, tryReadSync(buffer, minBytes)) {
+    if (result >= minBytes) {
+      return result;
+    }
+    // Short read indicates EOF. Run the same handling as the async path, using evalNow() so that
+    // the thrown exception becomes a rejected promise, just as it would have been before.
+    return kj::evalNow([&]() -> Promise<size_t> { return handleShortRead(result); });
+  }
+
+  return tryRead(buffer.begin(), minBytes, buffer.size()).then(kj::mv(handleShortRead));
 }
 
 Maybe<size_t> AsyncInputStream::tryReadSync(ArrayPtr<byte> buffer, size_t minBytes) {

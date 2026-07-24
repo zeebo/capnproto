@@ -2718,6 +2718,32 @@ KJ_TEST("Userland pipe with limit tryReadSync") {
   }
 }
 
+KJ_TEST("AsyncInputStream::read() synchronous fast path") {
+  kj::EventLoop loop;
+  WaitScope ws(loop);
+
+  auto pipe = newOneWayPipe();
+
+  {
+    // A read that can be fully served from a blocked write completes without suspending.
+    auto writePromise = pipe.out->write("foobar"_kjb);
+    byte buf[6]{};
+    auto readPromise = pipe.in->read(arrayPtr(buf), 6);
+    KJ_EXPECT(readPromise.poll(ws));
+    KJ_EXPECT(readPromise.wait(ws) == 6);
+    KJ_EXPECT(arrayPtr(buf) == "foobar"_kjb);
+    writePromise.wait(ws);
+  }
+
+  {
+    // A short synchronous read (EOF) produces the standard error, as a promise rejection.
+    pipe.out = nullptr;
+    byte buf[4]{};
+    KJ_EXPECT_THROW_RECOVERABLE_MESSAGE("stream disconnected prematurely",
+        pipe.in->read(arrayPtr(buf), 1).wait(ws));
+  }
+}
+
 KJ_TEST("newPromisedStream tryReadSync/tryWriteSync") {
   kj::EventLoop loop;
   WaitScope ws(loop);
