@@ -4965,7 +4965,7 @@ public:
     if (leftover.size() >= minBytes) {
       // Serve entirely from the leftover buffer.
       auto bytesToCopy = kj::min(buffer.size(), leftover.size());
-      buffer.first(bytesToCopy).copyFrom(leftover.first(bytesToCopy));
+      buffer.write(leftover.first(bytesToCopy));
       leftover = leftover.slice(bytesToCopy, leftover.size());
 
       // If we've consumed all of the data in the leftover buffer, go ahead and free it.
